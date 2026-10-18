@@ -27,7 +27,7 @@ REST API для полнотекстового поиска и удаления 
 1. Клонировать репозиторий:
 
 ```bash
-git clone git@github.com:Groomet/doc-search-api.git
+git clone https://github.com/Groomet/doc-search-api.git
 cd doc_search
 ```
 
