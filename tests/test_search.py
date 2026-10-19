@@ -1,6 +1,7 @@
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock
 
 from elastic_transport import ConnectionError as ElasticConnectionError
 
@@ -15,9 +16,11 @@ def make_document(document_id, date):
 
 
 def test_search_empty(client, mock_db):
-    with patch("app.api.routes.documents.es.search") as mock_search:
-        mock_search.return_value = {"hits": {"hits": []}}
-
+    with patch(
+        "app.api.routes.documents.es_async.search",
+        new_callable=AsyncMock,
+        return_value={"hits": {"hits": []}},
+    ) as mock_search:
         response = client.get(
             "/documents/search",
             params={"q": "несуществующееслово"},
@@ -25,15 +28,17 @@ def test_search_empty(client, mock_db):
 
     assert response.status_code == 200
     assert response.json() == []
-    mock_search.assert_called_once()
+    mock_search.assert_awaited_once()
 
 
 def test_search_order(client, mock_db):
     first = make_document(42, "2026-10-01T12:00:00")
     second = make_document(15, "2026-09-01T12:00:00")
 
-    # PostgreSQL возвращает документы НЕ в порядке Elasticsearch
-    mock_db.scalars.return_value.all.return_value = [second, first]
+    result = MagicMock()
+    result.all.return_value = [second, first]
+    mock_db.scalars.return_value = result
+
 
     fake_response = {
         "hits": {
@@ -45,7 +50,8 @@ def test_search_order(client, mock_db):
     }
 
     with patch(
-        "app.api.routes.documents.es.search",
+        "app.api.routes.documents.es_async.search",
+        new_callable=AsyncMock,
         return_value=fake_response,
     ) as mock_search:
         response = client.get(
@@ -60,10 +66,12 @@ def test_search_order(client, mock_db):
     assert len(data) == 2
     assert set(data[0]) == {"id", "text", "created_date", "rubrics"}
 
-    assert mock_search.call_args.kwargs["size"] == 20
-    assert mock_search.call_args.kwargs["sort"] == [
+    mock_search.assert_awaited_once()
+    assert mock_search.await_args.kwargs["size"] == 20
+    assert mock_search.await_args.kwargs["sort"] == [
         {"created_date": {"order": "desc"}}
     ]
+    mock_db.scalars.assert_awaited_once()
 
 
 def test_search_without_query(client, mock_db):
@@ -92,7 +100,8 @@ def test_search_query_too_long(client, mock_db):
 
 def test_search_elastic_unavailable(client, mock_db):
     with patch(
-        "app.api.routes.documents.es.search",
+        "app.api.routes.documents.es_async.search",
+        new_callable=AsyncMock,
         side_effect=ElasticConnectionError("Connection refused"),
     ):
         response = client.get(

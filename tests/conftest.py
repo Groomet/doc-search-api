@@ -1,16 +1,26 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.session import get_async_db
 from app.main import app
-from app.db.session import get_db
 
 
 @pytest.fixture
 def mock_db():
     session = MagicMock()
-    app.dependency_overrides[get_db] = lambda: session
+
+    session.scalar = AsyncMock()
+    session.scalars = AsyncMock()
+    session.delete = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_async_db] = override_get_db
 
     yield session
 
