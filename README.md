@@ -1,76 +1,85 @@
 # Document Search API
 
-REST API для полнотекстового поиска и удаления документов с использованием FastAPI, PostgreSQL и Elasticsearch.
+Простой REST API для полнотекстового поиска и удаления документов на базе **FastAPI**, **PostgreSQL** и **Elasticsearch**.
 
-## Стек технологий
+## Технологии
 
-- **Python 3.13**, FastAPI, Pydantic
-- **PostgreSQL 17**, SQLAlchemy, Alembic
-- **Elasticsearch 8.19**
-- **Docker Compose**
-- **pytest**
+- Python 3.13, FastAPI, Pydantic
+- PostgreSQL 17, SQLAlchemy, Alembic
+- Elasticsearch 8.19
+- Docker Compose
+- pytest
 
 ## Возможности
 
-- Импорт документов из CSV в PostgreSQL.
-- Индексация документов в Elasticsearch.
-- Полнотекстовый поиск с поддержкой русского языка и базовым поиском по другим языкам.
-- Выдача до 20 документов, отсортированных по дате создания (от новых к старым).
-- Удаление документа из PostgreSQL и Elasticsearch.
-- Автоматическая миграция БД, импорт и индексация при запуске через Docker Compose.
-- Автоматическая документация API через Swagger UI и OpenAPI.
+- Импорт документов из `data/posts.csv` в PostgreSQL.
+- Индексация текстов в Elasticsearch.
+- Асинхронные поиск и удаление через `AsyncSession` (SQLAlchemy) и `AsyncElasticsearch`.
+- Поиск по русскому тексту и базовый поиск по текстам на других языках.
+- Возврат до 20 найденных документов со всеми полями БД в порядке убывания `created_date`.
+- Удаление документа по `id` из PostgreSQL и Elasticsearch.
+- Автоматические миграции, импорт CSV и индексация при запуске через Docker Compose.
+- Документация OpenAPI и интерактивный Swagger UI.
 
-## Запуск проекта
+## Быстрый запуск
 
-**Требования:** Docker Desktop с поддержкой Docker Compose.
+**Требования:** Docker с поддержкой Docker Compose.
 
-1. Клонировать репозиторий:
+1. Клонируйте репозиторий и перейдите в его каталог:
+
+   ```bash
+   git clone https://github.com/Groomet/doc-search-api.git
+   cd doc-search-api
+   ```
+
+2. Создайте `.env` на основе примера:
+
+   **Windows PowerShell:**
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+   **Linux/macOS:**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   При необходимости измените параметры в `.env`.
+
+3. Соберите и запустите сервисы:
+
+   ```bash
+   docker compose up --build -d
+   ```
+
+При первом запуске служебный контейнер `init` последовательно:
+
+1. Применяет миграции Alembic.
+2. Импортирует документы из `data/posts.csv` в PostgreSQL.
+3. Создаёт или обновляет поисковый индекс Elasticsearch.
+4. Индексирует документы из PostgreSQL.
+
+После успешной инициализации запускается API. Проверить состояние контейнеров можно командой:
 
 ```bash
-git clone https://github.com/Groomet/doc-search-api.git
-cd doc_search
+docker compose ps -a
 ```
 
-2. Создать `.env` на основе `.env.example`.
-
-Для PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Для Linux/macOS:
-
-```bash
-cp .env.example .env
-```
-
-3. Запустить сервисы:
-
-```bash
-docker compose up --build -d
-```
-
-При первом запуске контейнер `init` автоматически:
-
-1. Применит миграции Alembic.
-2. Импортирует данные из `data/posts.csv`.
-3. Создаст или обновит индекс Elasticsearch.
-4. Проиндексирует документы из PostgreSQL.
-
-После успешной инициализации запустится FastAPI.
+Нормальное состояние: PostgreSQL и Elasticsearch — `healthy`, `init` — `Exited (0)`, API — `Up`.
 
 ## API
 
-По умолчанию API доступен по адресу `http://127.0.0.1:8000`.
+По умолчанию API доступен по адресу **http://127.0.0.1:8000** (порт настраивается через `API_PORT`).
 
-Интерактивная документация Swagger UI:
+Swagger UI: **http://127.0.0.1:8000/docs**  
+OpenAPI JSON через API: **http://127.0.0.1:8000/openapi.json**
 
-`http://127.0.0.1:8000/docs`
+### `GET /documents/search`
 
-### GET /documents/search
-
-Поиск документов по тексту.
+Принимает параметр `q` — текст поискового запроса. Возвращает до 20 документов, отсортированных по дате создания от новых к старым. 
+Каждый результат содержит `id`, `rubrics`, `text` и `created_date`.
 
 Пример:
 
@@ -78,11 +87,9 @@ docker compose up --build -d
 GET /documents/search?q=новости
 ```
 
-Результат — массив из максимум 20 документов, отсортированных по `created_date` по убыванию.
+### `DELETE /documents/{document_id}`
 
-### DELETE /documents/{document_id}
-
-Удаляет документ из PostgreSQL и Elasticsearch.
+Удаляет документ по идентификатору из PostgreSQL и Elasticsearch.
 
 Пример:
 
@@ -90,11 +97,11 @@ GET /documents/search?q=новости
 DELETE /documents/42
 ```
 
-Если документ не найден, возвращается HTTP 404.
+Если документ отсутствует в PostgreSQL, возвращается `404 Not Found`.
 
-### GET /health
+### `GET /health`
 
-Проверка доступности приложения.
+Проверка запуска приложения:
 
 ```json
 {
@@ -104,38 +111,46 @@ DELETE /documents/42
 
 ## Конфигурация
 
-Параметры задаются в `.env`:
+Параметры задаются в файле `.env`:
 
 | Переменная | Назначение |
 |---|---|
 | `POSTGRES_USER` | Пользователь PostgreSQL |
 | `POSTGRES_PASSWORD` | Пароль PostgreSQL |
-| `POSTGRES_DB` | Название базы данных |
-| `POSTGRES_PORT` | Порт PostgreSQL на хосте |
-| `ELASTIC_PORT` | Порт Elasticsearch на хосте |
-| `API_PORT` | Порт FastAPI на хосте |
+| `POSTGRES_DB` | Имя базы данных |
+| `POSTGRES_PORT` | Порт PostgreSQL на компьютере |
+| `ELASTIC_PORT` | Порт Elasticsearch на компьютере |
+| `API_PORT` | Порт HTTP API на компьютере |
 
-Внутри Docker сервисы взаимодействуют по именам `postgres` и `elasticsearch`.
+Внутри сети Docker API обращается к PostgreSQL по адресу `postgres:5432`, а к Elasticsearch — по адресу `elasticsearch:9200`. Внешние порты настраиваются отдельно и не меняют внутренние адреса сервисов.
 
 ## Тестирование
 
-Создать виртуальное окружение, активировать его и установить зависимости для разработки:
+Для запуска тестов локально нужен Python 3.13.
 
-```bash
-pip install -r requirements-dev.txt
-```
+**Windows PowerShell:**
 
-Запустить тесты:
-
-```bash
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
-Тесты проверяют основные сценарии поиска, удаления, валидации запросов и обработки ошибок.
+**Linux/macOS:**
 
-## OpenAPI
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m pytest -v
+```
 
-Спецификация API находится в файле `docs.json`.
+В проекте 11 тестов, покрывающих ответы API при поиске и удалении, порядок выдачи, проверку входных данных и отдельные сценарии ошибок. Внешние зависимости в тестах заменены моками, поэтому для их запуска не требуется работающий Docker.
+
+## Документация OpenAPI
+
+Экспортированная спецификация API находится в файле [`docs.json`](docs.json). Актуальная спецификация запущенного приложения также доступна по адресу `/openapi.json`.
 
 ## Остановка
 
@@ -143,10 +158,10 @@ python -m pytest -v
 docker compose down
 ```
 
-Данные PostgreSQL и Elasticsearch сохраняются в Docker volumes между запусками.
+Данные PostgreSQL и Elasticsearch сохраняются в именованных Docker volumes. Команда `docker compose down -v` дополнительно **удаляет эти тома вместе с данными** — используйте её только при необходимости полного сброса окружения.
 
 ## Ограничения
 
-- Для казахского и кыргызского языков используется базовый поиск без полноценной морфологической обработки.
-- Согласованность PostgreSQL и Elasticsearch при удалении реализована по принципу best-effort с попыткой восстановления индекса в случае ошибки БД.
-- Тесты эндпоинтов используют моки внешних зависимостей и не заменяют полноценные интеграционные тесты.
+- Для казахского и кыргызского текста доступен базовый поиск без полноценного морфологического анализа.
+- Удаление из PostgreSQL и Elasticsearch не является единой атомарной транзакцией: используется попытка компенсации при сбое сохранения в БД.
+- Автоматические тесты используют моки внешних зависимостей и не являются интеграционными тестами с реальными PostgreSQL и Elasticsearch.
